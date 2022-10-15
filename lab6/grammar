@@ -1,0 +1,15 @@
+S = sum | mul | sub | div | int ;
+
+digit = '0' - '9';
+
+int = digit+ $s { ArInt(s2i($s)) };
+
+ws = (' ' | '\t' | '\n' | '\r')*;
+
+sum = "(" ws S:l ws "+" ws S:r ws ")" { ArSum(:l, :r)};
+
+mul = "(" ws S:l ws "*" ws S:r ws ")" { ArMult(:l, :r)};
+
+sub = "(" ws S:l ws "-" ws S:r ws ")" { ArSub(:l, :r)};
+
+div = "(" ws S:l ws "/" ws S:r ws ")" { ArDiv(:l, :r)};

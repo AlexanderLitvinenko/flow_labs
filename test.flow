@@ -1,0 +1,7 @@
+import runtime;
+
+main() {
+    i : int = 1;
+    println(i);
+}
+
