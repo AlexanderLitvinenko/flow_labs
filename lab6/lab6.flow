@@ -31,45 +31,37 @@ ar2i(expr: ArExpr) -> int {
     }
 }
 
+get_intermidiate_stack(stack : [string], func : (int, int) -> int) -> [string] {
+
+	value = func(s2i(stack[length(stack) - 1]), s2i(stack[length(stack) - 2]));
+
+	interm_stack = replace(stack, length(stack), i2s(value));
+
+	removeRange(interm_stack, length(interm_stack) - 3, 2);
+}
+
 rpn2i(expr : string) -> string {
 
 	tokens : [string] = strSplit(expr, " "); 
 
 	fold(tokens, [], \stack, cur -> {
 		if (cur == "+") {
-
-			value = i2s(
-				s2i(stack[length(stack) - 1]) + 
-				s2i(stack[length(stack) - 2])
-				);
-
-			interm_stack = replace(stack, length(stack), value);
-
-			removeRange(interm_stack, length(interm_stack) - 3, 2);
+			get_intermidiate_stack(stack, \x, y -> x + y);
 		}
 
 		else if (cur == "*") {
-
-			value = i2s(
-				s2i(stack[length(stack) - 1]) *
-				s2i(stack[length(stack) - 2])
-				);
-
-			interm_stack = replace(stack, length(stack), value);
-
-			removeRange(interm_stack, length(interm_stack) - 3, 2);
+			get_intermidiate_stack(stack, \x, y -> x * y);
 		}
 
 		else {
 			replace(stack, length(stack), cur);
 		}
-
 	})[0];
 }
 
 
 main() {
-    example = "(3 * (1 + 2))";
+    example = "(10 * ((1 + 2) + 100))";
 
 	println("Source expression: ");
 	println(example);
