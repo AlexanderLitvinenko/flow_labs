@@ -1,17 +1,23 @@
 import lingo/pegcode/driver;
 import runtime;
+import lib/sys/system;
 
-ArExpr ::= ArSum, ArMult, ArSub, ArDiv, ArInt;
+ArExpr ::= ArSum, ArMult, ArSub, ArDiv, ArInt, ArVar, ArMinus;
+
+ArNum ::= ArInt, ArVar;
+
 ArSum(lhs : ArExpr, rhs : ArExpr);
 ArMult(lhs : ArExpr, rhs : ArExpr);
 ArSub(lhs : ArExpr, rhs : ArExpr);
 ArDiv(lhs : ArExpr, rhs : ArExpr);
+ArVar(var : string);
+ArRat(num : int, den : int);
 ArInt(val : int);
-ArInt(val : int);
+ArMinus(num : ArNum);
 
 s2ar(str : string) -> ArExpr {
 
-    e_gr = "#include grammar";
+    e_gr = "#include new_grammar";
 
     parsic(
             compilePegGrammar(e_gr),
@@ -28,21 +34,174 @@ ar2s(expr : ArExpr) -> string {
         ArMult(lhs, rhs) : "(" + ar2s(lhs) + "*" + ar2s(rhs) + ")";
         ArSub(lhs, rhs) :  "(" + ar2s(lhs) + "-" + ar2s(rhs) + ")";
         ArDiv(lhs, rhs) : "(" + ar2s(lhs) + "/" + ar2s(rhs) + ")";
-        ArInt(var) : i2s(var);
+		ArVar(var) : var;
+        ArInt(val) : i2s(val);
+		ArMinus(val) : ar2s(val);
     }
 }
 
-calculate(expr : ArExpr) -> double {
+// -a / -b -> a / b
+// a / -b -> -a / b
+get_numerator(a : int, b : int) -> int {
+	if (a < 0 && b < 0) {-a;}
+
+	else if (a > 0 && b < 0) {-a;}
+
+	else {a;}
+}
+
+get_denominator(a : int, b : int) -> int {
+	if (a < 0 && b < 0) {-b;}
+
+	else if (a > 0 && b < 0) {-b;}
+
+	else {b;}
+}
+
+simplify(numerator : int, denominator : int) -> Maybe<ArRat> {
+	if (denominator == 0) {
+		None();
+	}
+	else {
+		// -a / -b -> a / b
+		// a / -b -> -a / b
+		num = get_numerator(numerator, denominator);
+		den = get_denominator(numerator, denominator);
+
+		nod : int = NOD(num, den);
+		Some(ArRat(num / nod, den / nod));
+	}
+}
+
+NOD(numerator : int, denominator : int) -> int {
+	if (numerator == 0) { 1; }
+
+	else {
+		abs_num : int = iabs(numerator);
+
+		if (abs_num == denominator) {
+			abs_num;
+		}
+		
+		else if (abs_num > denominator) {
+			NOD(abs_num - denominator, denominator);
+		}
+
+		else {
+			NOD(abs_num, denominator - abs_num);
+		}
+	}
+}
+
+get_var(numerator : int, denominator : int) -> Maybe<ArRat> {
+	if (denominator <= 0) {
+		None();
+	}
+	else {
+		simplify(numerator, denominator);
+	}
+
+}
+
+handle_var(var : string) -> Maybe<ArRat> {
+
+	print("Input variable ");
+	println(var);
+
+	print("numerator = ");
+	numerator : int = s2i(readUntil("\n"));
+
+	print("denominator = ");
+	denominator : int = s2i(readUntil("\n"));
+	
+	get_var(numerator, denominator);
+}
+
+apply(lhs : Maybe<ArRat>,
+	  rhs : Maybe<ArRat>, 
+	  func : (l : ArRat, r : ArRat) -> Maybe<ArRat>) -> Maybe<ArRat> {
+
+	switch(lhs) {
+		None() : None();
+		Some(l) : {
+			switch(rhs) {
+				None() : None();
+				Some(r) : {
+					func(l, r);
+				}
+			}
+		}
+	}
+}
+
+calculate(expr : ArExpr) -> Maybe<ArRat> {
     switch(expr : ArExpr) {
-        ArSum(lhs, rhs)  : calculate(lhs) + calculate(rhs);
-        ArMult(lhs, rhs) : calculate(lhs) * calculate(rhs);
-        ArSub(lhs, rhs)  : calculate(lhs) - calculate(rhs);
-        ArDiv(lhs, rhs)  : calculate(lhs) / calculate(rhs);
-        ArInt(var) : i2d(var);
+        ArSum(lhs, rhs) : apply(calculate(lhs),
+								calculate(rhs),
+								\x, y -> simplify(x.num * y.den + x.den * y.num, x.den * y.den));
+
+        ArMult(lhs, rhs) : apply(calculate(lhs),
+								 calculate(rhs),
+								 \x, y -> simplify(x.num * y.num, x.den * y.den));
+
+        ArSub(lhs, rhs) : apply(calculate(lhs),
+								calculate(rhs),
+								\x, y -> simplify(x.num * y.den - x.den * y.num, x.den * y.den));
+
+        ArDiv(lhs, rhs) : apply(calculate(lhs),
+								calculate(rhs),
+								\x, y -> simplify(x.num * y.den, x.den * y.num));
+
+		ArVar(var) : handle_var(var);
+
+		ArMinus(num) : {
+			switch (num) {
+				ArInt(val) : Some(ArRat(-val, 1));
+				ArVar(var) : {
+					rat : Maybe<ArRat> = handle_var(var);
+					switch (rat) {
+						None() : None();
+						Some(v) : Some(ArRat(-v.num, v.den));
+					}
+				}
+			}
+		}
+
+        ArInt(var) : {
+			Some(ArRat(var, 1));
+		}
     }
+}
+
+printArRat(fract : Maybe<ArRat>) -> void {
+	switch (fract) {
+		None() : println(None());
+		Some(val) : {
+			if (val.den == 1) {
+				println(i2s(val.num));
+			}
+			else if (val.num == 0) {
+				println("0");
+			}
+			else {
+				println(i2s(val.num) + " / " + i2s(val.den));
+			}
+		}
+	}
 }
 
 main() {
-//    println((s2ar("((1+2)*321)")));
-    println(calculate(s2ar("((((1+2)*3)+1)/0)")));
+	example = "((((-a + (c * 5)) - (-38)) - b) / -d)";
+//	example = "((-11 / 10) / -a)";
+//	example = "(a / b)";
+
+	println(s2ar(example));
+
+	printArRat(calculate(s2ar(example)));
 }
+
+// a = 0 / 3; b = 0 / 3 -> None
+// a = 1 / 2; b = 0 / 3 -> None
+// a = -1 / 2; b = -1 / 2 -> 1
+// example = "(a / b)";
+
