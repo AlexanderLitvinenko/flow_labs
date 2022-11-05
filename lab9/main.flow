@@ -1,0 +1,180 @@
+import lingo/pegcode/driver;
+import runtime;
+import lib/sys/system;
+
+ArExpr ::= ArSum, ArMult, ArSub, ArDiv, ArInt, ArVar, ArMinus;
+
+ArNum ::= ArInt, ArVar;
+
+ArSum(lhs : ArExpr, rhs : ArExpr);
+ArMult(lhs : ArExpr, rhs : ArExpr);
+ArSub(lhs : ArExpr, rhs : ArExpr);
+ArDiv(lhs : ArExpr, rhs : ArExpr);
+ArVar(var : string);
+ArInt(val : int);
+ArMinus(num : ArNum);
+
+// rational number
+ArRat(num : int, den : int);
+
+s2ar(str : string) -> ArExpr {
+    e_gr = "#include extended_grammar.lingo";
+    parsic(compilePegGrammar(e_gr),
+			str,
+            SemanticActions(setTree(defaultPegActions.t,
+                    "createArInt", \s -> ArInt(s2i(s[0]))))
+          )
+}
+
+printArRat(fract : Maybe<ArRat>) -> void {
+	switch (fract) {
+		None() : println(None());
+		Some(val) : {
+			if (val.den == 1) {
+				println(i2s(val.num));
+			}
+			else if (val.num == 0) {
+				println("0");
+			}
+			else {
+				println(i2s(val.num) + " / " + i2s(val.den));
+			}
+		}
+	}
+}
+
+ar2s(expr : ArExpr) -> string {
+    switch(expr : ArExpr) {
+        ArSum(lhs, rhs) :  "(" + ar2s(lhs) + " + " + ar2s(rhs) + ")";
+        ArMult(lhs, rhs) : "(" + ar2s(lhs) + " * " + ar2s(rhs) + ")";
+        ArSub(lhs, rhs) : "(" + ar2s(lhs) + " - " + ar2s(rhs) + ")";
+        ArDiv(lhs, rhs) : "(" + ar2s(lhs) + " / " + ar2s(rhs) + ")";
+        ArInt(var) : i2s(var);
+		ArVar(var) : var;
+		ArMinus(num) : "-" + ar2s(num);
+    }
+}
+
+ar2rat_func(expr : ArExpr) -> ArExpr {
+    switch(expr) {
+        ArSum(lhs, rhs) : {
+			left = ar2rat_func(lhs);
+			right = ar2rat_func(rhs);
+			
+			switch (left) {
+				ArDiv(l, r) : {
+					switch (right) {
+						ArDiv(l_var, r_rhs) : ArDiv(ArSum(ArMult(left.lhs, right.rhs), 
+													ArMult(right.lhs, left.rhs)), ArMult(left.rhs, right.rhs));
+
+						default : ArDiv(ArSum(left.lhs, ArMult(left.rhs, right)),
+									    left.rhs);
+					}
+				}
+
+				default : {
+					switch (right) {
+						ArDiv(l_var, r_var) : ArDiv(ArSum(ArMult(left, right.rhs), right.lhs),
+											  right.rhs);
+
+						default : ArSum(left, right);
+					}
+				}
+			}
+		}
+
+        ArMult(lhs, rhs) : {
+			left = ar2rat_func(lhs);
+			right = ar2rat_func(rhs);
+
+			switch (left) {
+				ArDiv(l, r) : {
+					switch (right) {
+						ArDiv(l_var, r_rhs) : ArDiv(ArMult(left.lhs, right.lhs),
+												    ArMult(left.rhs, right.rhs));
+
+						default : ArDiv(ArMult(left.lhs, right), left.rhs);
+					}
+				}
+
+				default : {
+					switch (right) {
+						ArDiv(l_var, r_rhs) : ArDiv(ArMult(left, right.lhs), right.rhs);
+						default : ArMult(left, right);
+					}
+				}
+			}
+		}
+
+        ArSub(lhs, rhs) : {
+			left = ar2rat_func(lhs);
+			right = ar2rat_func(rhs);
+
+		
+			switch (left) {
+				ArDiv(l, r) : {
+					switch (right) {
+						ArDiv(l_var, r_rhs) : ArDiv(ArSub(ArMult(left.lhs, right.rhs), 
+														  ArMult(right.lhs, left.rhs)), ArMult(left.rhs, right.rhs));
+						default : ArDiv(ArSub(left.lhs, ArMult(left.rhs, right)),
+										left.rhs);
+					}
+				}
+
+				default : {
+					switch (right) {
+						ArDiv(l_var, r_var) : ArDiv(ArSub(ArMult(left, right.rhs), right.lhs),
+													right.rhs);
+
+						default : ArSub(left, right);
+					}
+				}
+			}
+		}	
+
+        ArDiv(lhs, rhs) : {
+			left = ar2rat_func(lhs);
+			right = ar2rat_func(rhs);
+		
+			switch (left) {
+				ArDiv(l, r) : {
+					switch (right) {
+						ArDiv(l_var, r_rhs) : ArDiv(ArMult(left.lhs, right.rhs),
+													ArMult(left.rhs, right.lhs)); 
+
+						default : ArDiv(left.lhs,
+									    ArMult(left.rhs, right));
+					}
+				}
+
+				default : {
+					switch (right) {
+						ArDiv(l_var, r_var) : ArDiv(ArMult(left, right.rhs),
+												    right.rhs);
+
+						default : ArDiv(left, right);
+					}
+				}
+			}
+		}
+
+        ArInt(var) : ArInt(var);
+
+		ArVar(var) : ArVar(var);
+
+		ArMinus(num) : ArMinus(num);
+    }
+}
+
+main() {
+//	example = "(((x / 2) * (3 / y)) + x)"; // (3 * x) / (2 * y)
+//	example = "(x - ((x / 2) * (3 / y)))"; // (3 * x) / (2 * y)
+//	example = "(y * x)";
+	example1 = readUntil("\n");
+	example = substring(example1, 0, strlen(example1) - 1);
+
+	println(example);
+	println(s2ar(example));
+	println(ar2s(ar2rat_func(s2ar(example))));
+}
+
