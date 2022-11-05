@@ -1,6 +1,7 @@
 import lingo/pegcode/driver;
 import runtime;
 import lib/sys/system;
+import lib/ds/hashmap; 
 
 ArExpr ::= ArSum, ArMult, ArSub, ArDiv, ArInt, ArVar, ArMinus;
 
@@ -11,18 +12,18 @@ ArMult(lhs : ArExpr, rhs : ArExpr);
 ArSub(lhs : ArExpr, rhs : ArExpr);
 ArDiv(lhs : ArExpr, rhs : ArExpr);
 ArVar(var : string);
-ArRat(num : int, den : int);
 ArInt(val : int);
 ArMinus(num : ArNum);
 
+// rational number
+ArRat(num : int, den : int);
+
+variables : HashMap<string, Maybe<ArRat>> = makeHashMap(\i -> s2i(i));
+
 s2ar(str : string) -> ArExpr {
-
-    e_gr = "#include new_grammar";
-
-    parsic(
-            compilePegGrammar(e_gr),
-
-            str,
+    e_gr = "#include extended_grammar.lingo";
+    parsic(compilePegGrammar(e_gr),
+			str,
             SemanticActions(setTree(defaultPegActions.t,
                     "createArInt", \s -> ArInt(s2i(s[0]))))
           )
@@ -100,21 +101,29 @@ get_var(numerator : int, denominator : int) -> Maybe<ArRat> {
 	else {
 		simplify(numerator, denominator);
 	}
-
 }
 
 handle_var(var : string) -> Maybe<ArRat> {
+	value : Maybe<Maybe<ArRat>> = lookupHashMap(variables, var);
 
-	print("Input variable ");
-	println(var);
+	switch (value) {
+		None() : {
+			print("Input variable ");
+			println(var);
 
-	print("numerator = ");
-	numerator : int = s2i(readUntil("\n"));
+			print("numerator = ");
+			numerator : int = s2i(readUntil("\n"));
 
-	print("denominator = ");
-	denominator : int = s2i(readUntil("\n"));
-	
-	get_var(numerator, denominator);
+			print("denominator = ");
+			denominator : int = s2i(readUntil("\n"));
+			
+			new_var : Maybe<ArRat> = get_var(numerator, denominator);
+			setHashMap(variables, var, new_var);
+			new_var;
+		}
+		// we already know this variable
+		Some(val) : val;
+	}
 }
 
 apply(lhs : Maybe<ArRat>,
@@ -157,6 +166,7 @@ calculate(expr : ArExpr) -> Maybe<ArRat> {
 		ArMinus(num) : {
 			switch (num) {
 				ArInt(val) : Some(ArRat(-val, 1));
+
 				ArVar(var) : {
 					rat : Maybe<ArRat> = handle_var(var);
 					switch (rat) {
@@ -191,17 +201,13 @@ printArRat(fract : Maybe<ArRat>) -> void {
 }
 
 main() {
-	example = "((((-a + (c * 5)) - (-38)) - b) / -d)";
-//	example = "((-11 / 10) / -a)";
-//	example = "(a / b)";
-
+//	example = "(((2/4) + (6/8))/(x - (1/3)))";
+	example = "((y + (x * x)) * y)";
+	println(example);
 	println(s2ar(example));
-
 	printArRat(calculate(s2ar(example)));
 }
 
-// a = 0 / 3; b = 0 / 3 -> None
-// a = 1 / 2; b = 0 / 3 -> None
-// a = -1 / 2; b = -1 / 2 -> 1
-// example = "(a / b)";
+
+
 
