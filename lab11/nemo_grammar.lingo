@@ -1,0 +1,40 @@
+program = description:d ws ";"  ws  body:b { NProg(:d, :b) };
+
+description = "var" ws variable:v ws ":" ws type:t { NVarDecl(:v, :t) };
+
+type = "int" { NInt() }
+	| "(" ws type:t1 ws "array" ws "of" ws type:t2 ws ")" { NArray(:t1, :t2) };
+
+body = assign 
+		| test  
+		| "{" body:b1 ws ";" ws body:b2 "}" { NMultiBody(:b1, :b2) }
+		| "{" body:b1 ws "V" ws body:b2 "}" { NUnionBody(:b1, :b2) }
+        | "{" body:b "}*" { NStar(:b) };
+
+assign = variable:v ws ":=" ws expression:e { NAssign(:v, :e) };
+test = relation:r ws "?" ws { NTest(:r) };
+
+expression = operand | arith_expression | functional_expression;
+
+arith_expression = 
+"(" ws operand:l ws operation$o ws operand:r ws ")" { NArithExp(:l, :r, $o) };
+
+operand = number | variable;
+
+operation = "+" | "-" | "*" | "/";
+
+functional_expression = 
+    "APP" "(" operand:l "," ws operand:r ")" { NApp(:l, :r) } |
+    "UPD" "(" operand:l "," ws operand:m "," ws operand:r ")" { NUpd(:l, :m, :r) };
+
+relation = operand:l operation$o operand:r { NRel(:l, :r, $o) };
+
+operation = "=" | "<" | ">" | "<=" | ">=";
+
+number = digit+;
+
+digit = "0-9";
+
+variable =  "a-z"+; 
+
+ws = (' ' | '\t' | '\n' | '\r')*;

@@ -1,0 +1,47 @@
+import ds/tree;
+import ds/set;
+import string;
+import lingo/pegcode/driver;
+
+NProg(nemo_desc : NVarDecl, nemo_body : NBody);
+
+NVarDecl(var : NVar, type : NType);
+
+NType ::= NInt, NArray;
+NInt();
+NArray(left : NType, right : NType);
+NBody ::= NAssign, NTest, NMultiBody, NUnionBody, NStar;
+
+NAssign(nemo_var : NVar, nemo_exp : NExp);
+NTest(rel : NRel);
+NStar(nemo_body : NBody);
+NMultiBody(left : NBody, right : NBody);
+NUnionBody(left : NBody, right : NBody);
+
+NExp ::= NOperand , NArithExp , NFuncExp;
+
+NOperand ::= NNum , NVar;
+
+NArithExp(left : NOperand, right : NOperand, nemo_op : string);
+
+NFuncExp ::= NApp , NUpd;
+NApp(left : NOperand, right : NOperand);
+NUpd(left : NOperand, middle : NOperand, right : NOperand);
+
+NRel(left : NOperand, right : NOperand, nemo_relation_sign : string);
+
+NNum(var : int);
+NVar(var : string);
+
+s2ar(str : string) -> NVarDecl {
+    e_gr = "#include nemo_grammar.lingo";
+    parsic(
+        compilePegGrammar(e_gr),
+        str,
+		defaultPegActions	
+	)
+}
+
+main() {
+	s2ar("var v : int; x := 1");
+}

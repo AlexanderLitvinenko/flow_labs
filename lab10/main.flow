@@ -175,6 +175,113 @@ ar2rat_func(exp : ArExpr) -> ArRatFunc {
     }
 }
 
+
+
+reduceRatFunc(rf : ArRatFunc) -> ArRatFunc {
+    if(rat_func2s(rf) == "0") { rf; }
+
+    else {
+	    nomCom = commonFactForSum(rf.num);
+	    denCom = commonFactForSum(rf.den);
+
+	    nomRest = dividePolySum(rf.num, nomCom);
+	    denRest = dividePolySum(rf.den, denCom);
+
+	    comsCom = commonFactForFacts(nomCom, denCom);
+	    nomComRest = dividePolySum(nomCom, comsCom);
+	    denComRest = dividePolySum(denCom, comsCom);
+
+	    if(nomRest == denRest) {
+		    ArRatFunc(nomComRest, denComRest);
+	    }
+	    else if(nomRest == neg_polynom(denRest)) {
+		    neg_rat_func(ArRatFunc(nomComRest, denComRest));
+	    }
+	    else {
+		    mult_rat_func(ArRatFunc(nomRest, denRest), ArRatFunc(nomComRest,denComRest))
+	    }
+    }
+}
+
+commonFactForSum(p : ArPolynom) -> ArPolynom  {
+	ArPolynom(makeTree1(commonFactPolyMultForSum(p), commonFactNumForSum(p)));
+}
+
+commonFactPolyMultForSum(p: ArPolynom) -> ArMonom {
+	if (p.sum == TreeEmpty()) ArMonom(TreeEmpty())
+
+	else {
+		firstPoly = (tree2pairs(p.sum))[0];
+		polyMultTree = foldTree(firstPoly.first.mult, firstPoly.first.mult, \k, v, acc -> 
+		{
+			foldTree(p.sum, acc, \k1, v1, acc1 -> 
+			{
+				v2 = lookupTreeDef(k1.mult, k, 0);
+				mergeTreeCustom(acc1, makeTree1(k, if (v2 > v) v else v2), \k2, vv1, vv2 -> 
+				{
+					if (vv1 > vv2) vv2;
+					else vv1;
+				})
+			})
+		})
+		ArMonom(filterTree(polyMultTree, \k, v -> { !(v == 0)}));
+	}
+}
+
+commonFactNumForSum(p : ArPolynom) -> int {
+	if (p.sum == TreeEmpty()) 1;
+
+	else {
+		foldTree(p.sum, 0, \k, v, acc -> 
+		{
+			if(acc == 0) iabs(v)
+			else gcd(acc, iabs(v))
+		})
+	}
+}
+
+commonFactForFacts(p1: ArPolynom, p2: ArPolynom) -> ArPolynom
+{
+	if(p1.sum == TreeEmpty() || p2.sum == TreeEmpty()) {
+		ArPolynom(makeTree1(ArMonom(TreeEmpty()), 1));
+	}
+	else {
+		psp1 = (tree2pairs(p1.sum))[0];
+		psp2 = (tree2pairs(p2.sum))[0];
+		
+		resultNum = gcd(psp1.second, psp2.second);
+
+		resultMult = foldTree(psp1.first.mult, psp1.first.mult, \k, v, acc -> 
+		{
+			v2 = lookupTreeDef(psp2.first.mult, k, 0);
+			mergeTreeCustom(acc, makeTree1(k, if(v2 > v) v else v2), \kk, vv1, vv2 -> 
+			{
+				if(vv1 > vv2) vv2 else vv1;
+			})
+		})
+		
+		ArPolynom(makeTree1(ArMonom(filterTree(resultMult, \k, v -> {!(v == 0)})), resultNum));
+	}
+}
+
+dividePolySum(pnum : ArPolynom, pden : ArPolynom) -> ArPolynom {
+    if(polynom2s(pden) == "1") { pnum; }
+
+    else {
+        psp = (tree2pairs(pden.sum))[0];
+	    denNum = psp.second;
+	    denMult = psp.first.mult;
+
+	    ArPolynom ( foldTree(pnum.sum, TreeEmpty(),
+					 \k, v, acc -> {
+						mergeTree ( acc,
+									makeTree1(ArMonom(filterTree(mergeTreeCustom(k.mult, denMult, \kk, vv1, vv2 -> { vv2 - vv1;}), \k1, v1 -> {!(v1 == 0)})), v / denNum)
+			    )
+		    })
+	    )
+    }
+}
+
 main() {
 //	example = "((((a + 1) / (7 * c)) * ((7 + (6 * c)) / x)) / ((3 * (a + 1)) / (x * x)))"; 
 //	example = "((((x - 6) / (6 * y)) / (((x * x) - (y * y)) / y)) * (((x * x) + ((2 * (x * y)) + (y * y))) / x))";
@@ -183,6 +290,5 @@ main() {
 	example = "(((1 / 2) * x) + ((1 / 2) * x))";
 
 	println(example);
-	println(rat_func2s(ar2rat_func(s2ar(example))));
+	println(rat_func2s(reduceRatFunc(ar2rat_func(s2ar(example)))));
 }
-
