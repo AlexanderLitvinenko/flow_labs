@@ -1,17 +1,19 @@
 import lingo/pegcode/driver;
-import runtime;
+import ds/tree;
 
-ArExpr ::= ArSum, ArMult, ArSub, ArDiv, ArInt, ArVar, ArMinus;
+ArExpr ::= ArInt, ArVar, ArMinus, ArBinary;
 
-ArNum ::= ArInt, ArVar;
-
+ArBinary ::= ArMult, ArSum, ArDiv, ArSub;
 ArSum(lhs : ArExpr, rhs : ArExpr);
 ArMult(lhs : ArExpr, rhs : ArExpr);
 ArSub(lhs : ArExpr, rhs : ArExpr);
 ArDiv(lhs : ArExpr, rhs : ArExpr);
+
+
+ArMinus(num : ArNum);
+ArNum ::= ArInt, ArVar;
 ArVar(var : string);
 ArInt(val : int);
-ArMinus(num : ArNum);
 
 ArMonom(mult : Tree<string, int>);
 ArPolynom(sum : Tree<ArMonom, int>);
@@ -21,66 +23,7 @@ ArRatFunc(num : ArPolynom, den : ArPolynom);
 // rational number
 ArRat(num : int, den : int);
 
-s2ar(str : string) -> ArExpr {
-    e_gr = "#include extended_grammar.lingo";
-    parsic(compilePegGrammar(e_gr),
-			str,
-			SemanticActions(setTree(defaultPegActions.t,
-					"createArInt", \s -> ArInt(s2i(s[0]))))
-          )
-}
-
-to_pow(var : string, degree : int) -> string{
-    if(degree != 1) { var + "^" + i2s(degree); }
-    else { var; }
-}
-
-discard_redudant_koeff(coeff : int, value : string) -> string{
-
-    if ((coeff != 1) && (value != "1")) { concatStrings([i2s(coeff), " * ", value]); }
-
-    else if ((coeff != 1) && (value == "1")) { concatStrings([i2s(coeff)]); }
-
-    else if ((coeff == 1) && (value != "1")) { concatStrings([value]); }
-
-    else { concatStrings([i2s(coeff)]); }
-}
-
-ar_monom2s(pm: ArMonom) -> string {
-    vars = tree2pairs(pm.mult);
-
-    if (length(vars) == 0) {"1";}
-
-    else {
-        foldi(vars, "", \i, acc, v -> {
-            new_vars = acc + to_pow(v.first, v.second);
-
-            if (i == length(vars) - 1) { new_vars; }
-            else { new_vars + "*"; }
-        })
-    }
-}
-
-
-polynom2s(ps : ArPolynom) -> string {
-
-    monoms = tree2pairs(ps.sum);
-
-    if (length(monoms) == 0) { "0"; }
-
-    else {
-        foldi(monoms, "", \i, acc, v -> {
-			new_monoms = acc + discard_redudant_koeff(v.second, ar_monom2s(v.first));
-			if(i == length(monoms) - 1) { new_monoms; }
-			else { new_monoms + " + "; }
-        });
-    }
-}
-
-rat_func2s(rf: ArRatFunc) -> string {
-    if(polynom2s(rf.den) == "1") { polynom2s(rf.num); }
-    else { "(" + polynom2s(rf.num) + ") / (" + polynom2s(rf.den) + ")"; }
-}
+NaN = ArInt(0);
 
 ar2s(expr : ArExpr) -> string {
     switch(expr : ArExpr) {
@@ -94,201 +37,239 @@ ar2s(expr : ArExpr) -> string {
     }
 }
 
-sum_polynoms(p1 : ArPolynom, p2 : ArPolynom) -> ArPolynom {
-    ArPolynom (
-			filterTree(mergeTreeCustom(p1.sum,
-									p2.sum,
-									\k, v1, v2 -> {v1 + v2;}),
-            \k, v -> {!(v == 0)}
-        )
-    )
+
+s2ar(str : string) -> ArExpr {
+    e_gr = "#include extended_grammar.lingo";
+    parsic(compilePegGrammar(e_gr),
+			str,
+			defaultPegActions
+          )
 }
 
-mult_polynoms(p1 : ArPolynom, p2 : ArPolynom) -> ArPolynom{
-    ArPolynom(
-        filterTree(
-            foldTree(p1.sum, TreeEmpty(), \k1, v1, acc1 -> {
-                mergeTreeCustom(acc1,
-                    foldTree(p2.sum, TreeEmpty(), \k2, v2, acc2 ->
-                    {
-                        multi = ArMonom(mergeTreeCustom(k1.mult, k2.mult, \kk, vv1, vv2 -> {vv1 + vv2}));
-                        mergeTreeCustom(acc2, makeTree1(multi, v1 * v2), \kk, vv1, vv2 -> {vv1 + vv2});
-                    }),
-                    \kk, vv1, vv2 -> {vv1 + vv2}
-                )
-            })
-            , \k,v -> {!(v == 0)}
-        )
-    )
+MatchInfo(match: bool, varRes: Tree<ArVar, ArExpr>);
+
+NOT_MATCH = MatchInfo(false, makeTree());
+
+makeRules(rulesArr: [Pair<string, string>]) -> Tree<ArExpr, ArExpr> {
+    foldi(rulesArr, makeTree(), \i, acc, rule -> {
+        exprLong = s2ar(rule.first);
+        exprShort = s2ar(rule.second);
+        setTree(acc, exprLong, exprShort);
+    });
 }
 
-neg_polynom(p: ArPolynom) -> ArPolynom {
-    ArPolynom(
-        foldTree(p.sum,
-				TreeEmpty(),
-				\k, v, acc -> { mergeTree(acc, makeTree1(k, 0 - v));}
-			)
-    )
-}
+inlineVariables(ex : ArExpr, varResolve: Tree<ArVar, ArExpr>) -> ArExpr {
+    switch(ex) {
+        ArInt(val): ex; 
 
-sum_rat_func(f1 : ArRatFunc, f2 : ArRatFunc) -> ArRatFunc {
-    ArRatFunc(sum_polynoms(mult_polynoms(f1.num, f2.den), mult_polynoms(f2.num, f1.den)),
-		  mult_polynoms(f1.den, f2.den));
-}
-
-neg_rat_func(f1 : ArRatFunc) -> ArRatFunc {
-    ArRatFunc(neg_polynom(f1.num), f1.den);
-}
-
-mult_rat_func(f1 : ArRatFunc, f2 : ArRatFunc) -> ArRatFunc {
-    ArRatFunc(mult_polynoms(f1.num, f2.num), mult_polynoms(f1.den, f2.den));
-}
-
-div_rat_func(f1 : ArRatFunc, f2 : ArRatFunc) -> ArRatFunc {
-    mult_rat_func(f1, ArRatFunc(f2.den, f2.num));
-}
-
-
-ar2rat_func(exp : ArExpr) -> ArRatFunc {
-    switch(exp) {
-        ArSum(l, r) : {
-            sum_rat_func(ar2rat_func(l), ar2rat_func(r));
+        ArVar(name): {
+            resolve = lookupTreeDef(varResolve, ex, NaN);
+            if (resolve == NaN) {
+                ex;
+            } else {
+                resolve;
+            }
         }
-        ArSub(l, r) : {
-            sum_rat_func(ar2rat_func(l), neg_rat_func(ar2rat_func(r)));
-        }
-        ArMult(l, r) : {
-            mult_rat_func(ar2rat_func(l), ar2rat_func(r));
-        }
-        ArDiv(l, r) : {
-            div_rat_func(ar2rat_func(l), ar2rat_func(r));
-        }
-        ArMinus(l) : {
-            neg_rat_func(ar2rat_func(l));
-        }
-        ArVar(v) : {
-            ArRatFunc(ArPolynom(makeTree1(ArMonom(makeTree1(v, 1)), 1)), ArPolynom(makeTree1(ArMonom(TreeEmpty()), 1)));
-        }
-		ArInt(val) : {
-            ArRatFunc(ArPolynom(makeTree1(ArMonom(TreeEmpty()), val)), ArPolynom(makeTree1(ArMonom(TreeEmpty()), 1)));
+
+        ArMinus(arg) : {
+			var = inlineVariables(arg, varResolve);
+
+			switch(var) {
+				ArInt(i) : ArMinus(ArInt(i));
+				ArVar(v) : ArMinus(ArVar(v));
+				default : {
+					//	println("Unexpected type, expected int or var, but got: " + var.name);
+					// never used
+					ArMinus(ArInt(1));
+				}
+			}
+		}
+		
+        ArSum(left, right): { 
+			ArSum(inlineVariables(left, varResolve), inlineVariables(right, varResolve));
+		}
+        ArSub(left, right): { 
+			ArSub(inlineVariables(left, varResolve), inlineVariables(right, varResolve));
+		}
+        ArDiv(left, right): { 
+			ArDiv(inlineVariables(left, varResolve), inlineVariables(right, varResolve));
+		}
+        ArMult(left, right): { 
+			ArMult(inlineVariables(left, varResolve), inlineVariables(right, varResolve));
 		}
     }
 }
 
+match(template: ArExpr, ex: ArExpr, varRes: Tree<ArVar, ArExpr>) -> MatchInfo {
+    // println(exprToStr(ex) + " by template " + exprToStr(template));
+    switch(template) {
+        ArInt(i): {
+            switch(ex) {
+                ArInt(i1): {
+                    MatchInfo(template == ex, varRes);
+                }
+                default: NOT_MATCH;
+            }
+        }
 
+        ArVar(name): {
+            curVal = lookupTreeDef(varRes, template, NaN);
+            if (curVal == NaN) {
+                MatchInfo(true, setTree(varRes, template, ex));
+            } else {
+                if (curVal == ex) {
+                    MatchInfo(true, varRes);
+                } else {
+                    // println(exprToStr(curVal) + " != " + exprToStr(ex));
+                    NOT_MATCH;
+                }
+            }
+        }
 
-reduceRatFunc(rf : ArRatFunc) -> ArRatFunc {
-    if(rat_func2s(rf) == "0") { rf; }
+        ArMinus(arg): {
+            switch(ex) {
+                ArMinus(arg2): match(arg, arg2, varRes);
+                default: NOT_MATCH;
+            }
+        }
 
-    else {
-	    nomCom = commonFactForSum(rf.num);
-	    denCom = commonFactForSum(rf.den);
+		ArSum(left, right) : {
+            switch(ex) {
+                ArSum(left2, right2) : {
+                        matchLL = match(left, left2, varRes);
+                        matchRR = match(right, right2, matchLL.varRes);
 
-	    nomRest = dividePolySum(rf.num, nomCom);
-	    denRest = dividePolySum(rf.den, denCom);
+                        if (matchLL.match && matchRR.match) {
+                            MatchInfo(true, matchRR.varRes);
+                        } else {
+                            NOT_MATCH;
+                        }
+                    } 
+				default: NOT_MATCH;
+            }
+		}
 
-	    comsCom = commonFactForFacts(nomCom, denCom);
-	    nomComRest = dividePolySum(nomCom, comsCom);
-	    denComRest = dividePolySum(denCom, comsCom);
+		ArSub(left, right) : {
+            switch(ex) {
+                ArSub(left2, right2) : {
+					matchLL = match(left, left2, varRes);
+                    matchRR = match(right, right2, matchLL.varRes);
 
-	    if(nomRest == denRest) {
-		    ArRatFunc(nomComRest, denComRest);
-	    }
-	    else if(nomRest == neg_polynom(denRest)) {
-		    neg_rat_func(ArRatFunc(nomComRest, denComRest));
-	    }
-	    else {
-		    mult_rat_func(ArRatFunc(nomRest, denRest), ArRatFunc(nomComRest,denComRest))
-	    }
+                    if (matchLL.match && matchRR.match) {
+                        MatchInfo(true, matchRR.varRes);
+                    } else {
+                        NOT_MATCH;
+                    }
+                } 
+				default: NOT_MATCH;
+			}
+		}
+
+		ArMult(left, right) : {
+            switch(ex) {
+                ArMult(left2, right2) : {
+					matchLL = match(left, left2, varRes);
+                    matchRR = match(right, right2, matchLL.varRes);
+
+                    if (matchLL.match && matchRR.match) {
+                        MatchInfo(true, matchRR.varRes);
+                    } else {
+                        NOT_MATCH;
+                    }
+                } 
+				default: NOT_MATCH;
+			}
+		}
+
+		ArDiv(left, right) : {
+            switch(ex) {
+                ArDiv(left2, right2) : {
+					matchLL = match(left, left2, varRes);
+                    matchRR = match(right, right2, matchLL.varRes);
+
+                    if (matchLL.match && matchRR.match) {
+                        MatchInfo(true, matchRR.varRes);
+                    } else {
+                        NOT_MATCH;
+                    }
+                } 
+				default: NOT_MATCH;
+			}
+		}
+	}
+}
+
+reduceOnce(ex : ArExpr, rules : Tree<ArExpr, ArExpr>) -> ArExpr {
+
+    res = ex;
+
+    res2 = switch(res) {
+		ArInt(val) : res;
+		ArVar(var) : res;
+		ArMinus(arg) : {
+			var = reduceOnce(arg, rules);
+			switch(var) {
+				ArInt(i) : ArMinus(ArInt(i));
+				ArVar(v) : ArMinus(ArVar(v));
+				default : {
+					// println("Unexpected type, expected int or var, but got: " + var.name);
+					ArMinus(ArInt(1));
+				}
+			}
+		}
+
+		ArSum(left, right) : ArSum(reduceOnce(left, rules), reduceOnce(right, rules));
+		ArSub(left, right) : ArSub(reduceOnce(left, rules), reduceOnce(right, rules));
+		ArDiv(left, right) : ArDiv(reduceOnce(left, rules), reduceOnce(right, rules));
+		ArMult(left, right) : ArMult(reduceOnce(left, rules), reduceOnce(right, rules));
     }
+
+    foldTree(rules, res2, \rule, value, acc -> {
+		mInfo = match(rule, acc, makeTree());
+		if (mInfo.match) {
+			inlineVariables(value, mInfo.varRes);
+		} else {
+			acc;
+		}
+    });
 }
 
-commonFactForSum(p : ArPolynom) -> ArPolynom  {
-	ArPolynom(makeTree1(commonFactPolyMultForSum(p), commonFactNumForSum(p)));
-}
 
-commonFactPolyMultForSum(p: ArPolynom) -> ArMonom {
-	if (p.sum == TreeEmpty()) ArMonom(TreeEmpty())
+reduce(ex : ArExpr, rules : Tree<ArExpr, ArExpr>) -> ArExpr {
+    reduced = reduceOnce(ex, rules);
 
-	else {
-		firstPoly = (tree2pairs(p.sum))[0];
-		polyMultTree = foldTree(firstPoly.first.mult, firstPoly.first.mult, \k, v, acc -> 
-		{
-			foldTree(p.sum, acc, \k1, v1, acc1 -> 
-			{
-				v2 = lookupTreeDef(k1.mult, k, 0);
-				mergeTreeCustom(acc1, makeTree1(k, if (v2 > v) v else v2), \k2, vv1, vv2 -> 
-				{
-					if (vv1 > vv2) vv2;
-					else vv1;
-				})
-			})
-		})
-		ArMonom(filterTree(polyMultTree, \k, v -> { !(v == 0)}));
+	if (reduced == ex) {
+		reduced;
+	} else {
+		reduce(reduced, rules);
 	}
-}
-
-commonFactNumForSum(p : ArPolynom) -> int {
-	if (p.sum == TreeEmpty()) 1;
-
-	else {
-		foldTree(p.sum, 0, \k, v, acc -> 
-		{
-			if(acc == 0) iabs(v)
-			else gcd(acc, iabs(v))
-		})
-	}
-}
-
-commonFactForFacts(p1: ArPolynom, p2: ArPolynom) -> ArPolynom
-{
-	if(p1.sum == TreeEmpty() || p2.sum == TreeEmpty()) {
-		ArPolynom(makeTree1(ArMonom(TreeEmpty()), 1));
-	}
-	else {
-		psp1 = (tree2pairs(p1.sum))[0];
-		psp2 = (tree2pairs(p2.sum))[0];
-		
-		resultNum = gcd(psp1.second, psp2.second);
-
-		resultMult = foldTree(psp1.first.mult, psp1.first.mult, \k, v, acc -> 
-		{
-			v2 = lookupTreeDef(psp2.first.mult, k, 0);
-			mergeTreeCustom(acc, makeTree1(k, if(v2 > v) v else v2), \kk, vv1, vv2 -> 
-			{
-				if(vv1 > vv2) vv2 else vv1;
-			})
-		})
-		
-		ArPolynom(makeTree1(ArMonom(filterTree(resultMult, \k, v -> {!(v == 0)})), resultNum));
-	}
-}
-
-dividePolySum(pnum : ArPolynom, pden : ArPolynom) -> ArPolynom {
-    if(polynom2s(pden) == "1") { pnum; }
-
-    else {
-        psp = (tree2pairs(pden.sum))[0];
-	    denNum = psp.second;
-	    denMult = psp.first.mult;
-
-	    ArPolynom ( foldTree(pnum.sum, TreeEmpty(),
-					 \k, v, acc -> {
-						mergeTree ( acc,
-									makeTree1(ArMonom(filterTree(mergeTreeCustom(k.mult, denMult, \kk, vv1, vv2 -> { vv2 - vv1;}), \k1, v1 -> {!(v1 == 0)})), v / denNum)
-			    )
-		    })
-	    )
-    }
 }
 
 main() {
-//	example = "((((a + 1) / (7 * c)) * ((7 + (6 * c)) / x)) / ((3 * (a + 1)) / (x * x)))"; 
-//	example = "((((x - 6) / (6 * y)) / (((x * x) - (y * y)) / y)) * (((x * x) + ((2 * (x * y)) + (y * y))) / x))";
-//	example = "(((4 * (a * a)) - 9) * ((1 / ((2 * a) - 3)) - (1 / ((2 * a) + 3))))";
-//	example = "((((9 * (x * x)) - 4) / ((3 * x) + 2)) - (3 * x))";
-	example = "(((1 / 2) * x) + ((1 / 2) * x))";
+    rulesArr = [
+                Pair("(x - x)", "(0)"),
+				Pair("(x / x)", "(1)"),
+                Pair("(x + x)", "(2 * x)"),
+                Pair("((y * x) + (z * x))", "((y + z) * x)"),
+                Pair("(0 * x)", "(0)"),
+                Pair("(x + 0)", "(x)"),
+                Pair("(x * 1)", "(v)")
+    ];
 
-	println(example);
-	println(rat_func2s(reduceRatFunc(ar2rat_func(s2ar(example)))));
+    rules = makeRules(rulesArr);
+
+    examples = [
+        "((4 * x) + (5 * x))",
+        "(((3 * x) + 7) + (7 + (3 * x)))",
+		"((x - y) * (x + y))",
+		"(((x + x) + x) / ((x + x) + x))"
+    ];
+
+    iter(examples, \example -> {
+        ex = s2ar(example);
+        exs = reduce(ex, rules);
+        println("before: " + example);
+        println("after:  " + ar2s(exs));
+        println("");
+    });
 }
