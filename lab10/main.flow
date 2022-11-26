@@ -1,9 +1,7 @@
 import lingo/pegcode/driver;
 import ds/tree;
 
-ArExpr ::= ArInt, ArVar, ArMinus, ArBinary;
-
-ArBinary ::= ArMult, ArSum, ArDiv, ArSub;
+ArExpr ::= ArInt, ArVar, ArMinus, ArMult, ArSum, ArDiv, ArSub;
 ArSum(lhs : ArExpr, rhs : ArExpr);
 ArMult(lhs : ArExpr, rhs : ArExpr);
 ArSub(lhs : ArExpr, rhs : ArExpr);
@@ -15,15 +13,8 @@ ArNum ::= ArInt, ArVar;
 ArVar(var : string);
 ArInt(val : int);
 
-ArMonom(mult : Tree<string, int>);
-ArPolynom(sum : Tree<ArMonom, int>);
-
-ArRatFunc(num : ArPolynom, den : ArPolynom);
-
 // rational number
 ArRat(num : int, den : int);
-
-NaN = ArInt(0);
 
 ar2s(expr : ArExpr) -> string {
     switch(expr : ArExpr) {
@@ -37,7 +28,6 @@ ar2s(expr : ArExpr) -> string {
     }
 }
 
-
 s2ar(str : string) -> ArExpr {
     e_gr = "#include extended_grammar.lingo";
     parsic(compilePegGrammar(e_gr),
@@ -46,37 +36,30 @@ s2ar(str : string) -> ArExpr {
           )
 }
 
-MatchInfo(match: bool, varRes: Tree<ArVar, ArExpr>);
-
-NOT_MATCH = MatchInfo(false, makeTree());
-
-makeRules(rulesArr: [Pair<string, string>]) -> Tree<ArExpr, ArExpr> {
-    foldi(rulesArr, makeTree(), \i, acc, rule -> {
-        exprLong = s2ar(rule.first);
-        exprShort = s2ar(rule.second);
-        setTree(acc, exprLong, exprShort);
+make_rules(rules_arr: [Pair<string, string>]) -> Tree<ArExpr, ArExpr> {
+    foldi(rules_arr, makeTree(), \i, acc, rule -> {
+        setTree(acc, s2ar(rule.first), s2ar(rule.second));
     });
 }
 
-inlineVariables(ex : ArExpr, varResolve: Tree<ArVar, ArExpr>) -> ArExpr {
+inline_variables(ex : ArExpr, varResolve : Tree<ArVar, ArExpr>) -> ArExpr {
     switch(ex) {
-        ArInt(val): ex; 
+        ArInt(val): ex;
 
-        ArVar(name): {
-            resolve = lookupTreeDef(varResolve, ex, NaN);
-            if (resolve == NaN) {
-                ex;
-            } else {
-                resolve;
-            }
+        ArVar(name) : {
+			resolve = lookupTree(varResolve, ex);
+			switch (resolve) {
+				None() : ex;
+				Some(res) : res;
+			}
         }
 
         ArMinus(arg) : {
-			var = inlineVariables(arg, varResolve);
+			var = inline_variables(arg, varResolve);
 
 			switch(var) {
-				ArInt(i) : ArMinus(ArInt(i));
-				ArVar(v) : ArMinus(ArVar(v));
+				ArInt(i) : ArMinus(var);
+				ArVar(v) : ArMinus(var);
 				default : {
 					//	println("Unexpected type, expected int or var, but got: " + var.name);
 					// never used
@@ -85,121 +68,94 @@ inlineVariables(ex : ArExpr, varResolve: Tree<ArVar, ArExpr>) -> ArExpr {
 			}
 		}
 		
-        ArSum(left, right): { 
-			ArSum(inlineVariables(left, varResolve), inlineVariables(right, varResolve));
+        ArSum(left, right) : { 
+			ArSum(inline_variables(left, varResolve), inline_variables(right, varResolve));
 		}
-        ArSub(left, right): { 
-			ArSub(inlineVariables(left, varResolve), inlineVariables(right, varResolve));
+        ArSub(left, right) : { 
+			ArSub(inline_variables(left, varResolve), inline_variables(right, varResolve));
 		}
-        ArDiv(left, right): { 
-			ArDiv(inlineVariables(left, varResolve), inlineVariables(right, varResolve));
+        ArDiv(left, right) : { 
+			ArDiv(inline_variables(left, varResolve), inline_variables(right, varResolve));
 		}
-        ArMult(left, right): { 
-			ArMult(inlineVariables(left, varResolve), inlineVariables(right, varResolve));
+        ArMult(left, right) : { 
+			ArMult(inline_variables(left, varResolve), inline_variables(right, varResolve));
 		}
     }
 }
 
-match(template: ArExpr, ex: ArExpr, varRes: Tree<ArVar, ArExpr>) -> MatchInfo {
-    // println(exprToStr(ex) + " by template " + exprToStr(template));
+find_matches_in_binary_op(left : ArExpr , right : ArExpr,  left2 : ArExpr, right2 : ArExpr, var_resolver : Tree<ArVar, ArExpr>) -> Maybe<Tree<ArVar, ArExpr>> {
+	matchLL = match(left, left2, var_resolver);
+	switch(matchLL) {
+		None() : None();
+		Some(resolver) : match(right, right2, resolver);
+	}
+}
+
+match(template : ArExpr, ex : ArExpr, var_resolver : Tree<ArVar, ArExpr>) -> Maybe<Tree<ArVar, ArExpr>> {
     switch(template) {
         ArInt(i): {
             switch(ex) {
                 ArInt(i1): {
-                    MatchInfo(template == ex, varRes);
+					if (template == ex) {
+						Some(var_resolver);
+					}
+					else {
+						None();
+					}
                 }
-                default: NOT_MATCH;
+                default: None();
             }
         }
 
-        ArVar(name): {
-            curVal = lookupTreeDef(varRes, template, NaN);
-            if (curVal == NaN) {
-                MatchInfo(true, setTree(varRes, template, ex));
-            } else {
-                if (curVal == ex) {
-                    MatchInfo(true, varRes);
-                } else {
-                    // println(exprToStr(curVal) + " != " + exprToStr(ex));
-                    NOT_MATCH;
-                }
+        ArVar(var): {
+            cur_val = lookupTree(var_resolver, template);
+			switch(cur_val) {
+				None() : { Some(setTree(var_resolver, template, ex)); }
+				Some(cur) : {
+					if (cur == ex) { Some(var_resolver); }
+					else { None(); }
+				}
             }
         }
 
         ArMinus(arg): {
             switch(ex) {
-                ArMinus(arg2): match(arg, arg2, varRes);
-                default: NOT_MATCH;
+                ArMinus(arg2): match(arg, arg2, var_resolver);
+                default: None();
             }
         }
 
 		ArSum(left, right) : {
             switch(ex) {
-                ArSum(left2, right2) : {
-                        matchLL = match(left, left2, varRes);
-                        matchRR = match(right, right2, matchLL.varRes);
-
-                        if (matchLL.match && matchRR.match) {
-                            MatchInfo(true, matchRR.varRes);
-                        } else {
-                            NOT_MATCH;
-                        }
-                    } 
-				default: NOT_MATCH;
+                ArSum(left2, right2) : find_matches_in_binary_op(left, right, left2, right2, var_resolver);
+				default: None();
             }
 		}
 
 		ArSub(left, right) : {
             switch(ex) {
-                ArSub(left2, right2) : {
-					matchLL = match(left, left2, varRes);
-                    matchRR = match(right, right2, matchLL.varRes);
-
-                    if (matchLL.match && matchRR.match) {
-                        MatchInfo(true, matchRR.varRes);
-                    } else {
-                        NOT_MATCH;
-                    }
-                } 
-				default: NOT_MATCH;
+                ArSub(left2, right2) : find_matches_in_binary_op(left, right, left2, right2, var_resolver);
+				default: None();
 			}
 		}
 
 		ArMult(left, right) : {
             switch(ex) {
-                ArMult(left2, right2) : {
-					matchLL = match(left, left2, varRes);
-                    matchRR = match(right, right2, matchLL.varRes);
-
-                    if (matchLL.match && matchRR.match) {
-                        MatchInfo(true, matchRR.varRes);
-                    } else {
-                        NOT_MATCH;
-                    }
-                } 
-				default: NOT_MATCH;
+                ArMult(left2, right2) : find_matches_in_binary_op(left, right, left2, right2, var_resolver);
+				default: None();
 			}
 		}
 
 		ArDiv(left, right) : {
             switch(ex) {
-                ArDiv(left2, right2) : {
-					matchLL = match(left, left2, varRes);
-                    matchRR = match(right, right2, matchLL.varRes);
-
-                    if (matchLL.match && matchRR.match) {
-                        MatchInfo(true, matchRR.varRes);
-                    } else {
-                        NOT_MATCH;
-                    }
-                } 
-				default: NOT_MATCH;
+                ArDiv(left2, right2) : find_matches_in_binary_op(left, right, left2, right2, var_resolver);
+				default: None();
 			}
 		}
 	}
 }
 
-reduceOnce(ex : ArExpr, rules : Tree<ArExpr, ArExpr>) -> ArExpr {
+reduce_one_exp_level(ex : ArExpr, rules : Tree<ArExpr, ArExpr>) -> ArExpr {
 
     res = ex;
 
@@ -207,10 +163,10 @@ reduceOnce(ex : ArExpr, rules : Tree<ArExpr, ArExpr>) -> ArExpr {
 		ArInt(val) : res;
 		ArVar(var) : res;
 		ArMinus(arg) : {
-			var = reduceOnce(arg, rules);
+			var = reduce_one_exp_level(arg, rules);
 			switch(var) {
-				ArInt(i) : ArMinus(ArInt(i));
-				ArVar(v) : ArMinus(ArVar(v));
+				ArInt(i) : ArMinus(var);
+				ArVar(v) : ArMinus(var);
 				default : {
 					// println("Unexpected type, expected int or var, but got: " + var.name);
 					ArMinus(ArInt(1));
@@ -218,25 +174,25 @@ reduceOnce(ex : ArExpr, rules : Tree<ArExpr, ArExpr>) -> ArExpr {
 			}
 		}
 
-		ArSum(left, right) : ArSum(reduceOnce(left, rules), reduceOnce(right, rules));
-		ArSub(left, right) : ArSub(reduceOnce(left, rules), reduceOnce(right, rules));
-		ArDiv(left, right) : ArDiv(reduceOnce(left, rules), reduceOnce(right, rules));
-		ArMult(left, right) : ArMult(reduceOnce(left, rules), reduceOnce(right, rules));
+		ArSum(left, right) : ArSum(reduce_one_exp_level(left, rules), reduce_one_exp_level(right, rules));
+		ArSub(left, right) : ArSub(reduce_one_exp_level(left, rules), reduce_one_exp_level(right, rules));
+		ArDiv(left, right) : ArDiv(reduce_one_exp_level(left, rules), reduce_one_exp_level(right, rules));
+		ArMult(left, right) : ArMult(reduce_one_exp_level(left, rules), reduce_one_exp_level(right, rules));
     }
 
     foldTree(rules, res2, \rule, value, acc -> {
 		mInfo = match(rule, acc, makeTree());
-		if (mInfo.match) {
-			inlineVariables(value, mInfo.varRes);
-		} else {
-			acc;
+
+		switch(mInfo) {
+			None() : acc;
+			Some(val) : inline_variables(value, val);
 		}
     });
 }
 
 
 reduce(ex : ArExpr, rules : Tree<ArExpr, ArExpr>) -> ArExpr {
-    reduced = reduceOnce(ex, rules);
+    reduced = reduce_one_exp_level(ex, rules);
 
 	if (reduced == ex) {
 		reduced;
@@ -246,23 +202,24 @@ reduce(ex : ArExpr, rules : Tree<ArExpr, ArExpr>) -> ArExpr {
 }
 
 main() {
-    rulesArr = [
+    rules_arr = [
                 Pair("(x - x)", "(0)"),
 				Pair("(x / x)", "(1)"),
                 Pair("(x + x)", "(2 * x)"),
                 Pair("((y * x) + (z * x))", "((y + z) * x)"),
                 Pair("(0 * x)", "(0)"),
                 Pair("(x + 0)", "(x)"),
-                Pair("(x * 1)", "(v)")
+                Pair("(x * 1)", "(x)")
     ];
 
-    rules = makeRules(rulesArr);
+    rules = make_rules(rules_arr);
 
     examples = [
         "((4 * x) + (5 * x))",
         "(((3 * x) + 7) + (7 + (3 * x)))",
 		"((x - y) * (x + y))",
-		"(((x + x) + x) / ((x + x) + x))"
+		"(((x + x) + x) / ((x + x) + x))",
+		"(y + (x / 0))"
     ];
 
     iter(examples, \example -> {
